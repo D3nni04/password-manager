@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Gestione Password</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9fafe;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      text-align: center;
+      color: #2563eb;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      outline: none;
+    }
+    input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px #2563eb;
+    }
+    button {
+      background-color: #2563eb;
+      color: white;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    .btn-secondary {
+      background-color: #f3f4f6;
+      color: #374151;
+    }
+    .btn-secondary:hover {
+      background-color: #e5e7eb;
+    }
+    table {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      word-break: break-word;
+    }
+    thead {
+      background-color: #f1f5f9;
+    }
+    .actions button {
+      width: auto;
+      font-size: 0.9rem;
+      padding: 6px 12px;
+    }
+    @media (max-width: 600px) {
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        background-color: #fff;
+        margin-bottom: 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      td {
+        padding: 5px 0;
+      }
+      td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: #6b7280;
+        display: block;
+      }
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="pinScreen">
+    <h1>🔐 Inserisci il tuo PIN</h1>
+    <input type="password" id="pinInput" placeholder="PIN">
+    <button onclick="unlock()">Sblocca</button>
+    <button class="btn-secondary" onclick="resetAll()">Resetta tutto</button>
+  </div>
+
+  <div class="container hidden" id="app">
+    <h1>🔑 Gestione Password</h1>
+
+    <div id="passwordForm">
+      <input type="text" id="account" placeholder="Nome Account">
+      <input type="email" id="email" placeholder="Email">
+      <input type="text" id="password" placeholder="Password">
+      <button onclick="addEntry()">💾 Aggiungi / Salva</button>
+    </div>
+
+    <table id="passwordTable">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Email</th>
+          <th>Password</th>
+          <th>Azioni</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    let editingIndex = null;
+    let pinKey = '';
+    const securePasswordsKey = 'securePasswords';
+    const passwordTempKey = 'passwordTemp';
+
+    function encrypt(data, key) {
+      return CryptoJS.AES.encrypt(JSON.stringify(data), key).toString();
+    }
+
+    function decrypt(ciphertext, key) {
+      try {
+        const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+        return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function unlock() {
+      const pin = document.getElementById('pinInput').value;
+      if (!pin) return alert("Inserisci il PIN");
+
+      const encryptedData = localStorage.getItem(securePasswordsKey);
+
+      if (!encryptedData) {
+        alert("Nuovo PIN impostato");
+        pinKey = pin;
+        const pinHash = CryptoJS.SHA256(pin).toString();
+        localStorage.setItem('pinHash', pinHash);
+        localStorage.setItem(passwordTempKey, JSON.stringify([]));
+        showApp();
+        return;
+      }
+
+      const decrypted = decrypt(encryptedData, pin);
+      if (decrypted === null) {
+        alert("PIN errato! Riprova.");
+        return;
+      }
+
+      pinKey = pin;
+      localStorage.setItem(passwordTempKey, JSON.stringify(decrypted));
+      showApp();
+      loadEntries();
+    }
+
+    function showApp() {
+      document.getElementById('pinScreen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    }
+
+    function loadEntries() {
+      const entries = JSON.parse(localStorage.getItem(passwordTempKey) || '[]');
+      const tbody = document.querySelector('#passwordTable tbody');
+      tbody.innerHTML = '';
+      entries.forEach((entry, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td data-label="Account">${entry.account}</td>
+          <td data-label="Email">${entry.email}</td>
+          <td data-label="Password">${entry.password}</td>
+          <td data-label="Azioni" class="actions">
+            <button class="btn-secondary" onclick="editEntry(${index})">✏️ Modifica</button>
+            <button class="btn-secondary" onclick="deleteEntry(${index})">🗑️ Elimina</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function addEntry() {
+      const account = document.getElementById('account').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+      if (!account || !email || !password) {
+        alert("Compila tutti i campi!");
+        return;
+      }
+
+      const entries = JSON.parse(localStorage.getItem(passwordTempKey) || '[]');
+      if (editingIndex !== null) {
+        entries[editingIndex] = { account, email, password };
+        editingIndex = null;
+      } else {
+        entries.push({ account, email, password });
+      }
+
+      localStorage.setItem(passwordTempKey, JSON.stringify(entries));
+      const encrypted = encrypt(entries, pinKey);
+      localStorage.setItem(securePasswordsKey, encrypted);
+
+      document.getElementById('account').value = '';
+      document.getElementById('email').value = '';
+      document.getElementById('password').value = '';
+      loadEntries();
+    }
+
+    function editEntry(index) {
+      const entries = JSON.parse(localStorage.getItem(passwordTempKey) || '[]');
+      const entry = entries[index];
+      document.getElementById('account').value = entry.account;
+      document.getElementById('email').value = entry.email;
+      document.getElementById('password').value = entry.password;
+      editingIndex = index;
+    }
+
+    function deleteEntry(index) {
+      const entries = JSON.parse(localStorage.getItem(passwordTempKey) || '[]');
+      if (confirm("Vuoi davvero eliminare questa voce?")) {
+        entries.splice(index, 1);
+        localStorage.setItem(passwordTempKey, JSON.stringify(entries));
+        const encrypted = encrypt(entries, pinKey);
+        localStorage.setItem(securePasswordsKey, encrypted);
+        loadEntries();
+      }
+    }
+
+    function resetAll() {
+      if (confirm("Sei sicuro di voler resettare tutto? Il PIN e tutte le password verranno eliminati.")) {
+        localStorage.clear();
+        alert("Tutto è stato resettato!");
+        location.reload();
+      }
+    }
+  </script>
+
+</body>
+</html>
+
+
+
+
